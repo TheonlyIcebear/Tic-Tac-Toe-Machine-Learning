@@ -32,7 +32,7 @@ For my model I simply made the model play against a bot that would play the opti
 
 # Usage ⚙
 
-You can run main.py however you'd like, to change the paramaters go to the bottom of the file and change the paramaters going to `Main`
+You can run `main.py` however you'd like, to change the paramaters go to the bottom of the file and change the paramaters going to `Main`
 
 ### Arguements
  > Tests:<br> 
@@ -49,4 +49,15 @@ You can run main.py however you'd like, to change the paramaters go to the botto
 
 ### Visualization
 You can run `animate.py` to get a graph of the average accuracy for each generation
+![Img](images/example-graph0.png)
 
+To begin training a new model just simply empty the contents of `data.py` and restart `main.py`
+
+### Playing aginst the model
+
+You can run `play.py` to be able to play against the bot.
+
+# Extra
+The way it's trained is pretty slow and can be optimized very easily, but for now I'm just uploading this.
+
+The bot you train will ussually be able to hold up against a intermediate player.
