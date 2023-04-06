@@ -46,3 +46,7 @@ You can run main.py however you'd like, to change the paramaters go to the botto
 
  > Threads:<br>
  > - How many CPU Threads the program will use for training
+
+### Visualization
+You can run `animate.py` to get a graph of the average accuracy for each generation
+

@@ -1,6 +1,5 @@
 from multiprocessing import Process, Queue
 from numba import jit, cuda
-from operations import *
 from tqdm import tqdm
 import threading, hashlib, random, numpy as np, math, copy, time, json
 
@@ -47,86 +46,9 @@ class Game:
         x = index // 3
         y = index % 3
 
-
-        lose_threats = self.threats(grid, opponent, 2)
-        win_threats =  self.threats(grid, player, 2)
-
-        opp_forks = self.threats(grid, opponent, 1)
-        forks = self.threats(grid, player, 1)
-
-        real_forks = [threat for threat in [*set(opp_forks)] if opp_forks.count(threat) > 1]
-        opp_forks = [threat for threat in [*set(opp_forks)] if opp_forks.count(threat) > 1 and ((threat in win_threats) if win_threats else True) ]
-        forks = [threat for threat in [*set(forks)] if forks.count(threat) > 1 and ((threat in lose_threats) if lose_threats else True)]
-
-        points = 0
-
-        response = self.eval()
-
-        if response is True:
-            return None
-
-        if win_threats:
-            if not tile in win_threats: # If bot ignores a free win
-                points -= 2
-
-            else:
-                points += 2
-
-        elif lose_threats:
-            if not tile in lose_threats: # If bot hangs a loss
-                points -= 1
-            else:
-                points += 0.5
-
-        elif len(real_forks) > 1: # To defend multiple fork possibilities you need create a threat that blocks a fork
-
-            old_opp_forks = len(real_forks)
-            old_win_threats = len(win_threats)
-            grid[x, y] = player
-
-            new_opp_forks = self.threats(grid, opponent, 1)
-            new_win_threats = [threat for threat in self.threats(grid, player, 2) if not threat in opp_forks]
-
-            new_opp_forks = [*set(threat for threat in new_opp_forks if new_opp_forks.count(threat) > 1)]
-
-            if new_win_threats:
-                points += 5
-            else:
-                points -= 5
-
-        elif opp_forks:
-            if not tile in opp_forks: # Bot fails to block fork threat
-                points -= 1
-
-            else:
-                points += 0.5
-
-        elif (np.unique(self.grid).size == 2 and (opponent in self.grid)):
-            opening = np.where(self.grid == opponent)[0] * 3 + np.where(self.grid == opponent)[1]
-            
-            if (opening == 4):
-                if tile in [0, 2, 6, 8]:
-                    points += 75
-
-                else:
-                    points -= 10000
-
-            elif opening in [0, 2, 6, 8]:
-                if tile == 4:
-                    points += 75
-
-                else:
-                    points -= 10000
-
-        elif tile == 4:
-            points += 0.25
-
-        elif tile in [0, 2, 6, 8]:
-            points += 0.125
-
         self.grid[x, y] = player
 
-        return points
+        return 1
 
     @property
     def open_slots(self):
