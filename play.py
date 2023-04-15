@@ -4,14 +4,60 @@ from tqdm import tqdm
 import threading, hashlib, random, numpy as np, math, copy, time, json
 
 class Game:
-    def __init__(self):
+    def __init__(self, grid=None):
         self.grid = np.array([ 
             [0, 0, 0],
             [0, 0, 0],
             [0, 0, 0]
-        ])
+        ]) if grid is None else np.array(np.split(np.array(grid), 3))
 
-    def threats(self, grid, player, tiles):
+    @property
+    def open_slots(self):
+        grid = self.grid.flatten()
+        return np.where(grid == 0)[0]
+
+    @property
+    def drawed(self):
+        grid = self.grid
+        threats = self._threats(grid, 0, 1) + self._threats(grid, 1, 1) + self._threats(grid, 0, 2) + self._threats(grid, 1, 2)
+
+        return not bool(threats)
+
+    @property
+    def valid_game(self):
+
+        if abs(len(np.where(self.grid == 1)[0]) - len(np.where(self.grid == 2)[0])) > 1:
+            return False
+
+        elif self._threats(self.grid, 0, 0) and self._threats(self.grid, 1, 0):
+            return False
+        
+        return True
+
+    def eval(self):
+        for player in [1, 2]:
+            if any([ 
+                (self.grid[row] == player).all() for row in range(3)
+            ]): # Horizontal crosses
+                return player
+
+            elif any([ 
+                (self.grid[:, column] == player).all() for column in range(3)
+            ]): # Vertical crosses
+                return player
+
+            elif (np.diag(self.grid) == player).all(): # Downwards diagonal crosses
+                return player
+
+            elif (np.diag(np.fliplr(self.grid)) == player).all() :# Upwards diagonal crosses
+                return player
+
+            elif not (self.grid == 0).any():
+                return True
+        
+        return None
+
+    def _threats(self, grid, player, tiles):
 
         search = ([0] * (3 - tiles)) + [player] * tiles
         
@@ -46,116 +92,90 @@ class Game:
         x = index // 3
         y = index % 3
 
+        win_threats =  self._threats(grid, player, 2)
+        response = self.eval()
+
+        if response is True: # If game id drawed
+            return None
+
+        if tile in win_threats: # If bot wins the game
+            return True
+
         self.grid[x, y] = player
 
         return 1
 
-    @property
-    def open_slots(self):
-        grid = self.grid.flatten()
-        return np.where(grid == 0)[0]
-
-    @property
-    def drawed(self):
+    # Find the optimal moves, doesn't use mini-max
+    def best_moves(self, player): 
         grid = self.grid
-        threats = self.threats(grid, 0, 1) + self.threats(grid, 1, 1) + self.threats(grid, 0, 2) + self.threats(grid, 1, 2)
-
-        return not bool(threats)
-
-    def eval(self):
-        for player in [1, 2]:
-            if any([ 
-                (self.grid[row] == player).all() for row in range(3)
-            ]): # Horizontal crosses
-                return player
-
-            elif any([ 
-                (self.grid[:, column] == player).all() for column in range(3)
-            ]): # Vertical crosses
-                return player
-
-            elif (np.diag(self.grid) == player).all(): # Downwards diagonal crosses
-                return player
-
-            elif (np.diag(np.fliplr(self.grid)) == player).all() :# Upwards diagonal crosses
-                return player
-
-            elif not (self.grid == 0).any():
-                return True
-        
-        return None
-
-    def random_move(self, player, skill_level):
-        grid = self.grid
-
-        if not skill_level:
-            return random.choice(self.open_slots)
 
         opponent = (1 - int(player)) + 1
         player = int(player) + 1
 
-        lose_threats = self.threats(grid, opponent, 2)
-        win_threats =  self.threats(grid, player, 2)
+        lose_threats = self._threats(grid, opponent, 2)
+        win_threats =  self._threats(grid, player, 2)
 
-        opp_forks = self.threats(grid, opponent, 1)
-        forks = self.threats(grid, player, 1)
+        opp_forks = self._threats(grid, opponent, 1)
+        forks = self._threats(grid, player, 1)
 
         real_forks = [threat for threat in [*set(opp_forks)] if opp_forks.count(threat) > 1]
         opp_forks = [threat for threat in [*set(opp_forks)] if opp_forks.count(threat) > 1 and ((threat in win_threats) if win_threats else True) ]
         forks = [threat for threat in [*set(forks)] if forks.count(threat) > 1 and ((threat in lose_threats) if lose_threats else True)]
 
-        points = 0
+        best = self.open_slots
 
         if win_threats:
-            best = random.choice(win_threats)
+            best = win_threats
 
         elif lose_threats:
-            best = random.choice(lose_threats)
+            best = lose_threats
 
         elif len(real_forks) > 1: # To defend multiple fork possibilities you need create a threat that blocks a fork
-            for tile in self.threats(grid, player, 1):
+            found = False
+
+            for tile in self.open_slots:
                 grid = np.array(list(self.grid))
 
                 old_opp_forks = len(real_forks)
                 old_win_threats = len(win_threats)
                 grid[tile // 3, tile % 3] = player
 
-                new_opp_forks = self.threats(grid, opponent, 1)
-                new_win_threats = self.threats(grid, player, 2)
+                new_opp_forks = self._threats(grid, opponent, 1)
+                new_win_threats = self._threats(grid, player, 2)
 
                 new_opp_forks = [*set([threat for threat in new_opp_forks if new_opp_forks.count(threat) > 1])]
                 
-                if len(new_opp_forks) < old_opp_forks:
-                    best = tile
-                    
-                if (len(new_opp_forks) < old_opp_forks) and len(new_win_threats) > old_win_threats:
-                    best = tile
-                    break
+                if len(new_opp_forks) < old_opp_forks and not found:
+                    best = [tile]
+
+                if (len(new_opp_forks) < old_opp_forks) and new_win_threats and (not new_win_threats[0] in new_opp_forks):
+                    best.append(tile)
+                    found = True
 
         elif opp_forks:
-            best = random.choice(opp_forks)
+            best = opp_forks
 
         elif 4 in self.open_slots:
-            best =  4
+            best = [4]
 
-        elif np.unique(self.grid).tolist() == [0, opponent] and self.grid[1][1] == opponent:
-            best = random.choice([0, 2, 6, 8])
+        elif (np.unique(self.grid).size == 2 and (opponent in self.grid)):
+            opening = (np.where(self.grid == opponent)[0] * 3) + np.where(self.grid == opponent)[1]
+            
+            if (opening == 4):
+                best = [0, 2, 6, 8]
 
-        else:
-            best = random.choice(self.open_slots)
+            elif opening in [0, 2, 6, 8]:
+                best = [4]
 
-        decimal_accuracy = 256
+        return np.unique(best)
 
-        if random.randint(0, 10 ** decimal_accuracy // skill_level) <= 10 ** decimal_accuracy:
-            return best
-        
-        else:
-            return random.choice(self.open_slots)
             
 class Model:
     def __init__(self, model):
         self.model = model
         self._layer_outputs = []
+        self._previous_changes = np.array([])
+        np.seterr(all="ignore")
 
     # The activation function
     def _sigmoid(self, x):
@@ -171,7 +191,11 @@ class Model:
 
         previous_layer_output = input
 
+        self._layer_outputs = np.array([input])
+        i = 0
+
         for layer in model:
+            i += 1
 
             layer_output = np.array([])
 
@@ -182,6 +206,10 @@ class Model:
                 output = self._sigmoid(np.dot(weights, previous_layer_output) + bias)
 
                 layer_output = np.append(layer_output, output)
+
+            self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
+
+            print(layer_output, i)
 
             previous_layer_output = np.array(layer_output)
 
@@ -208,10 +236,10 @@ class Main:
                 print('Enter grid:')
                 tile = int(input('>>')) - 1
 
-                evaluation = game.select(tile % 9, 1)
+                evaluation = game.select(tile % 9, 0)
                 self.render(game.grid)
 
-                if evaluation == 2:
+                if evaluation is True:
                     print("You win!")
                     break
 
@@ -230,16 +258,15 @@ class Main:
                 largest_value = np.max(prediction[open_slots])
                 choice = np.where(prediction == largest_value)[0][0]
 
-                # choice = game.random_move(0, 1)
-                evaluation = game.select(choice, 0)
+                print(prediction)
 
-                print(evaluation)
+                evaluation = game.select(choice, 1)
 
                 print("+++ Bot's Turn")
 
                 self.render(game.grid)
 
-                if evaluation == 2:
+                if evaluation is True:
                     print("You lose!")
                     break
 

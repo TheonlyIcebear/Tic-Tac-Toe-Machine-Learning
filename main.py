@@ -5,12 +5,12 @@ from tqdm import tqdm
 import multiprocessing, threading, hashlib, random, numpy as np, copy, math, time, json
 
 class Game:
-    def __init__(self):
+    def __init__(self, grid=None):
         self.grid = np.array([ 
             [0, 0, 0],
             [0, 0, 0],
             [0, 0, 0]
-        ])
+        ]) if grid is None else np.array(np.split(np.array(grid), 3))
 
     @property
     def open_slots(self):
@@ -24,7 +24,18 @@ class Game:
 
         return not bool(threats)
 
-    def _eval(self):
+    @property
+    def valid_game(self):
+
+        if abs(len(np.where(self.grid == 1)[0]) - len(np.where(self.grid == 2)[0])) > 1:
+            return False
+
+        elif self._threats(self.grid, 0, 0) and self._threats(self.grid, 1, 0):
+            return False
+        
+        return True
+
+    def eval(self):
         for player in [1, 2]:
             if any([ 
                 (self.grid[row] == player).all() for row in range(3)
@@ -83,7 +94,7 @@ class Game:
         y = index % 3
 
         win_threats =  self._threats(grid, player, 2)
-        response = self._eval()
+        response = self.eval()
 
         if response is True: # If game id drawed
             return None
@@ -121,7 +132,9 @@ class Game:
             best = lose_threats
 
         elif len(real_forks) > 1: # To defend multiple fork possibilities you need create a threat that blocks a fork
-            for tile in self._threats(grid, player, 1):
+            found = False
+
+            for tile in self.open_slots:
                 grid = np.array(list(self.grid))
 
                 old_opp_forks = len(real_forks)
@@ -133,12 +146,12 @@ class Game:
 
                 new_opp_forks = [*set([threat for threat in new_opp_forks if new_opp_forks.count(threat) > 1])]
                 
-                if len(new_opp_forks) < old_opp_forks:
+                if len(new_opp_forks) < old_opp_forks and not found:
                     best = [tile]
-                    
-                if (len(new_opp_forks) < old_opp_forks) and len(new_win_threats) > old_win_threats:
-                    best = [tile]
-                    break
+
+                if (len(new_opp_forks) < old_opp_forks) and new_win_threats and (not new_win_threats[0] in new_opp_forks):
+                    best.append(tile)
+                    found = True
 
         elif opp_forks:
             best = opp_forks
@@ -162,6 +175,8 @@ class Model:
     def __init__(self, model):
         self.model = model
         self._layer_outputs = []
+        self._previous_changes = np.array([])
+        np.seterr(all="ignore")
 
     # The activation function
     def _sigmoid(self, x):
@@ -171,20 +186,20 @@ class Model:
         return 1 / ( 1 + np.exp(-x) )
 
     # Edit the model according to the gradients
-    def apply_changes(self, gradients, learning_rate):
+    def apply_changes(self, gradients, learning_rate, rev=1):
         model = np.array(self.model)
         height = model.shape[1]
 
         for gradient in gradients:
             for mask in gradient:
-                model += (mask * learning_rate)
+                model += (mask * learning_rate) * rev
 
-        return model
+        self.model = model
 
     # Using back propagration to calculate the gradient descent
-    def gradient(self, target, predictions):
+    def gradient(self, target, predictions, momentum=0.5):
 
-        model = self.model[:, :]
+        model = np.array(self.model)
 
         height = self.model.shape[1]
         length = self.model.shape[0]
@@ -201,7 +216,7 @@ class Model:
 
         _previous_derivs = np.array([])
         
-        for count, (outputs, layer) in list(enumerate(zip(layer_outputs, model)))[::-1]:
+        for count, (outputs, layer) in enumerate(zip(layer_outputs[:0:-1], model[::-1])):
             
             previous_derivs = np.array(_previous_derivs)
             _previous_derivs = np.array([])
@@ -210,14 +225,20 @@ class Model:
                 break
 
             for idx, (output, weights) in enumerate(zip(outputs, layer)):
+                
+                prediction = layer_outputs[count + 1][idx]
 
-                prediction = output
                 weights = weights[:-1]
                 bias = weights[-1]
                 sigmoid_deriv = prediction * (1 - prediction)
 
+                if self._previous_changes.size:
+                    momentum_velocity = self._previous_changes[count, idx] * momentum
+                else:
+                    momentum_velocity = 0
 
-                prev_activations = layer_outputs[-(count + 2)]
+
+                prev_activations = layer_outputs[count + 1]
 
                 if not count:
 
@@ -229,7 +250,7 @@ class Model:
                     total_deriv = prev_activations * node_value
                     bias_deriv = node_value
 
-                    model_copy[-(count + 1), idx, :] -= np.append(total_deriv, bias_deriv)
+                    # model_copy[-(count + 1), idx, :] -= np.append(total_deriv, bias_deriv) + momentum_velocity
 
 
                     _previous_derivs = np.append(_previous_derivs, node_value)
@@ -241,9 +262,11 @@ class Model:
                 bias_deriv = node_value
                 total_deriv = prev_activations * node_value
 
-                model_copy[-(count + 1), idx, :] -= np.append(total_deriv, bias_deriv)
+                model_copy[-(count + 1), idx, :] -= np.append(total_deriv, bias_deriv) + momentum_velocity
 
                 _previous_derivs = np.append(_previous_derivs, node_value)
+
+        self._previous_changes = model_copy
 
         return model_copy
 
@@ -254,7 +277,7 @@ class Model:
 
         previous_layer_output = input
 
-        self._layer_outputs = np.array([])
+        self._layer_outputs = np.array([input])
 
         for layer in model:
 
@@ -268,19 +291,17 @@ class Model:
 
                 layer_output = np.append(layer_output, output)
 
-            if self._layer_outputs.size:
-                self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
-            else:
-                self._layer_outputs = np.hstack([self._layer_outputs, layer_output])
+            self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
 
             previous_layer_output = np.array(layer_output)
 
         return layer_output
 
 class Main:
-    def __init__(self, tests, learning_rate, dimensions, threads):
+    def __init__(self, tests, learning_rate, momentum_conservation, dimensions, threads):
         self.tests = tests
         self.learning_rate = learning_rate
+        self.momentum = momentum_conservation
         self.length, self.height = dimensions
         self.threads = threads
         
@@ -293,7 +314,7 @@ class Main:
         
         
         try:
-            brain = json.load(open('data.py', 'r+'))
+            brain = np.array(json.load(open('data.py', 'r+')))
         except Exception as e:
             print(e)
             brain = self.build()
@@ -314,26 +335,23 @@ class Main:
 
             tloop.set_description(f"Average Accuracy: {self.accuracy}, Generations: {self.generations}, Live: {self.children}")
 
-            generation = self.generations
+            generation = int(self.generations)
             if not len(best_overtime) == generation:
                 best_overtime.append(0)
 
             if generation:
-                if self.accuracy:
-                    best_overtime[generation - 1] = self.accuracy
-                else:
-                    best_overtime[generation - 1] = 0
+                best_overtime[generation - 1] = self.accuracy
 
             json.dump(best_overtime, open('generations.json', 'w+'), indent=2)
 
     # Manages threads
     def manager(self, model=None):
         threads = []
-        winner = []
+        average_accuracy = np.array([])
 
         queue = self.queue
         
-        for _ in range(self.threads):
+        for count in range(self.threads):
             receive_queue = Queue()
 
             thread = multiprocessing.Process(target=self.worker, args=(receive_queue,))
@@ -343,28 +361,21 @@ class Main:
             thread[0].start()
 
 
-        while True:
+        count = 0
+        old_accuracy = -1
+        model = Model(model)
 
-            self.accuracy = 0
+        while True:
+            
+            count += 1
             self.generations += 1 
             self.model = model
 
-            backup = open('data.py', 'r+').read()
-
-            with open('data.py', 'w+') as file:
-                
-                try:
-                    file.write(json.dumps(self.model if not isinstance(self.model, np.ndarray) else self.model.tolist()))
-                except Exception as e:
-                    print(e)
-                    file.write(backup)
-        
-            queue = self.queue
-
             self.children = self.threads
+            self.accuracy = 0
             
             for thread in threads:
-                thread[1].put(np.array(model))
+                thread[1].put(model)
 
             gradients = []
 
@@ -375,24 +386,39 @@ class Main:
                 self.accuracy = (self.accuracy + accuracy) / 2
                 self.children -= 1
 
-            model_obj = Model(model)
-            model = model_obj.apply_changes(gradients, self.learning_rate)
+            model.apply_changes(gradients, self.learning_rate)
+            # model = Model(model.model.tolist())
 
-    # Run the bot through the trials for tic-tac-toe
+            average_accuracy = np.append(average_accuracy, self.accuracy)
+
+            backup = open('data.py', 'r+').read()
+            queue = self.queue
+
+            if self.accuracy >= old_accuracy:
+
+                old_accuracy = float(self.accuracy)
+
+                with open('data.py', 'w+') as file:
+
+                        try:
+                            file.write(json.dumps(model.model.tolist()))
+                        except Exception as e:
+                            print(e)
+                            file.write(backup)
+
     def worker(self, receieve_queue=None):
         generations = 0
 
         while True:
-
             generations += 1
             brain = receieve_queue.get()
-            
-            model = Model(brain)
+
             gradient_map = []
             points = 0
 
             for count in range(self.tests):
                 player = count % 2
+                model = brain
                 game = Game()
 
                 for i in range(9):
@@ -406,7 +432,7 @@ class Main:
                         break
 
                     if player == 1:
-
+                        
                         prediction = model.eval(grid)
                         largest_value = np.max(prediction[open_slots])
                         choice = np.where(prediction == largest_value)[0][0]
@@ -414,7 +440,6 @@ class Main:
                         best_moves = game.best_moves(player)
 
                         gradient = model.gradient(best_moves, prediction)
-
                         gradient_map.append(gradient)
 
                         select = game.select(choice, player)
@@ -442,8 +467,9 @@ class Main:
                         if select is True:
                             break
 
-            accuracy = points/self.tests
-            self.queue.put([accuracy, gradient_map])
+                accuracy = points/self.tests
+                self.queue.put([accuracy, gradient_map])
+                    
 
     def build(self):
 
@@ -454,8 +480,9 @@ class Main:
 
 if __name__ == "__main__":
     Main(
-        tests = 25,  # The length of the tests
-        learning_rate = 1.25, # How fast the model learns, if too low the model will train very slow and if too high it won't train
-        dimensions = [350, 10],  # The dimensions of the model
-        threads = 8  # How many concurrent threads to be used
+        tests = 50,  # The length of the tests,
+        momentum_conservation = 0.75, # What percent of the previous changes that are added to each weight in our gradient descent
+        learning_rate = 0.75, # How fast the model learns, if too low the model will train very slow and if too high it won't train
+        dimensions = [350, 9],  # The dimensions of the model
+        threads = 10  # How many concurrent threads to be used
     )

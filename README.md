@@ -38,6 +38,9 @@ You can run `main.py` however you'd like, to change the paramaters go to the bot
  > Tests:<br> 
  > - How many times trials each thread will face the model against the training bot<br>
 
+ > Momentum Conservation
+ > - The percent of the old gradient descent that is added to the current gradient descent
+
  > Learning Rate:<br>
  > - This changes how much and how quickly the model changes. The higher the faster but it may actually miss it's target's value and fail to actually train effectively.
 
