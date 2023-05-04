@@ -190,12 +190,11 @@ class Model:
 
         model = np.array(self.model)
 
-        height = self.model.shape[1]
         length = self.model.shape[0]
 
         last_layer = predictions
 
-        targets = np.array([0] * height)
+        targets = np.array([0] * 9)
         targets[target] = 1
 
         layer_outputs = self._layer_outputs[::-1]
@@ -216,20 +215,22 @@ class Model:
                 break
 
             for idx, (output, weights) in enumerate(zip(outputs[::-1], layer[::-1])):
-                
+
+                prev_activations = layer_outputs[count + 1]
                 prediction = output
 
-                weights = weights[:-1]
+                index = -(count + 1)
+                layer_height = len(outputs)
+                prev_layer_height = len(prev_activations)
+
+                weights = weights[:layer_height]
                 bias = weights[-1]
                 sigmoid_deriv = prediction * (1 - prediction)
 
                 if self._previous_changes.size:
-                    momentum_velocity = self._previous_changes[count, idx] * momentum
+                    momentum_velocity = self._previous_changes[count, idx, prev_layer_height + 1] * momentum
                 else:
                     momentum_velocity = 0
-
-
-                prev_activations = layer_outputs[count + 1]
 
                 if not count:
 
@@ -241,8 +242,10 @@ class Model:
                     total_deriv = prev_activations * node_value
                     bias_deriv = node_value
 
-                    model_copy[-(count + 1), idx, :] -= np.append(total_deriv, bias_deriv) + momentum_velocity
+                    layer_gradient = np.append(total_deriv, bias_deriv) + momentum_velocity
+                    layer = model_copy[index, idx, :prev_layer_height + 1]
 
+                    model_copy[index, idx, :layer_height + 1] = [weights - change for weights, change in zip(layer, layer_gradient)]
 
                     _previous_derivs = np.append(_previous_derivs, node_value)
 
@@ -253,7 +256,10 @@ class Model:
                 bias_deriv = node_value
                 total_deriv = prev_activations * node_value
 
-                model_copy[-(count + 1), idx, :] -= np.append(total_deriv, bias_deriv) + momentum_velocity
+                layer_gradient = np.append(total_deriv, bias_deriv) + momentum_velocity
+                layer = model_copy[index, idx, :prev_layer_height + 1]
+
+                model_copy[index, idx, :layer_height + 1] = [weights - change for weights, change in zip(layer, layer_gradient)]
 
                 _previous_derivs = np.append(_previous_derivs, node_value)
 
@@ -262,7 +268,6 @@ class Model:
         return model_copy
 
     # Run the model to get a output
-    @jit(forceobj=True)
     def eval(self, input):
         answer = 0
         model = self.model
@@ -271,17 +276,17 @@ class Model:
 
         self._layer_outputs = np.array([])
 
-        for layer in model:
+        for count, layer in enumerate(model):
 
             layer_output = np.array([])
-
+ 
             for node in layer:
                 weights = node[:len(previous_layer_output)]
                 bias = node[-1]
 
                 output = self._sigmoid(np.dot(weights, previous_layer_output) + bias)
 
-                layer_output = np.append(layer_output, output)
+                layer_output = np.append(layer_output, output)[:9]
 
             if self._layer_outputs.size:
                 self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
@@ -293,8 +298,9 @@ class Model:
         return layer_output
 
 class Main:
-    def __init__(self, tests, learning_rate, momentum_conservation, dimensions, threads):
-        self.tests = tests
+    def __init__(self, tests_amount, generation_limit, learning_rate, momentum_conservation, dimensions, threads):
+        self.tests = tests_amount
+        self.trials = generation_limit
         self.learning_rate = learning_rate
         self.momentum = momentum_conservation
         self.length, self.height = dimensions
@@ -363,7 +369,7 @@ class Main:
         old_accuracy = -1
         model = Model(model)
 
-        while True:
+        for _ in range(self.trials):
             
             count += 1
             self.generations += 1 
@@ -433,8 +439,18 @@ class Main:
                     
                     game = Game(grid)
                     open_slots = game.open_slots.tolist()
+
+                    x_grid = np.zeros(9)
+                    o_grid = np.zeros(9)
+                    blank_grid = np.zeros(9)
+
+                    blank_grid[np.where(grid == 0)] = 1
+                    x_grid[np.where(grid == 1)] = 1
+                    o_grid[np.where(grid == 2)] = 1
+                    
+                    real_grid = np.append(blank_grid, np.append(x_grid, np.append(o_grid, player)))
                         
-                    prediction = model.eval(grid)
+                    prediction = model.eval(real_grid)
                     largest_value = np.max(prediction[open_slots])
                     choice = np.where(prediction == largest_value)[0][0]
 
@@ -466,15 +482,18 @@ class Main:
                     
 
     def build(self):
-        model = np.random.randn(self.length, self.height, self.inputs + 1)
+        default = (3 * 9) + 2
+
+        model = np.random.randn(self.length, self.height, self.height + 1 if self.height > default else default )
 
         return model
 
 if __name__ == "__main__":
     Main(
-        tests = 200,  # The length of the tests,
+        tests_amount = 600, # The length of the tests,
+        generation_limit = 100, # The amount of generations the model will be trained through
         momentum_conservation = 0.25, # What percent of the previous changes that are added to each weight in our gradient descent
         learning_rate = 0.0025, # How fast the model learns, if too low the model will train very slow and if too high it won't train
-        dimensions = [8000, 9],  # The dimensions of the model
-        threads = 12  # How many concurrent threads to be used
+        dimensions = [9000, 32],  # The length and height of the model
+        threads = 8  # How many concurrent threads to be used
     )
