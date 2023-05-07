@@ -23,17 +23,6 @@ class Game:
 
         return not bool(threats)
 
-    @property
-    def valid_game(self):
-
-        if abs(len(np.where(self.grid == 1)[0]) - len(np.where(self.grid == 2)[0])) > 1:
-            return False
-
-        elif self._threats(self.grid, 0, 0) and self._threats(self.grid, 1, 0):
-            return False
-        
-        return True
-
     def eval(self):
         for player in [1, 2]:
             if any([ 
@@ -54,7 +43,7 @@ class Game:
 
             elif not (self.grid == 0).any():
                 return True
-        
+
         return None
 
     def _threats(self, grid, player, tiles):
@@ -92,18 +81,16 @@ class Game:
         x = index // 3
         y = index % 3
 
-        win_threats =  self._threats(grid, player, 2)
-        response = self.eval()
-
-        if response is True: # If game id drawed
-            return None
-
-        if tile in win_threats: # If bot wins the game
-            return True
-
         self.grid[x, y] = player
 
-        return 1
+        win_threats =  self._threats(grid, player, 2)
+        response = self.eval()
+        
+
+        if response is True: # If game is drawed
+            return None
+
+        return response == player
 
     # Find the optimal moves, doesn't use mini-max
     def best_moves(self, player): 
@@ -185,39 +172,40 @@ class Model:
         return 1 / ( 1 + np.exp(-x) )
 
     # Run the model to get a output
+    @jit(forceobj=True)
     def eval(self, input):
         answer = 0
         model = self.model
 
         previous_layer_output = input
 
-        self._layer_outputs = np.array([input])
-        i = 0
+        self._layer_outputs = np.array([])
 
-        for layer in model:
-            i += 1
+        for count, layer in enumerate(model):
 
             layer_output = np.array([])
-
+ 
             for node in layer:
                 weights = node[:len(previous_layer_output)]
                 bias = node[-1]
 
                 output = self._sigmoid(np.dot(weights, previous_layer_output) + bias)
-
+                
                 layer_output = np.append(layer_output, output)
 
-            self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
 
-            print(layer_output, i)
+            if self._layer_outputs.size:
+                self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
+            else:
+                self._layer_outputs = np.hstack([self._layer_outputs, layer_output])
 
             previous_layer_output = np.array(layer_output)
 
-        return layer_output
+        return layer_output[:9]
 
 class Main:
     def __init__(self):
-        self.brain = json.load(open('data.py', 'r+'))
+        self.brain = json.load(open('model-training-data.py', 'r+'))
         self.play()
 
     def render(self, grid):
@@ -231,48 +219,64 @@ class Main:
             while True:
 
                 model = Model(self.brain)
+                if (game.grid == 0).all():
+                    player = random.randint(0, 1)
+
+                else:
+                    player = 1 - player
                 
+                if not player:
 
-                print('Enter grid:')
-                tile = int(input('>>')) - 1
+                    print('Enter grid:')
+                    tile = int(input('>>')) - 1
 
-                evaluation = game.select(tile % 9, 0)
-                self.render(game.grid)
+                    evaluation = game.select(tile % 9, 0)
+                    self.render(game.grid)
 
-                if evaluation is True:
-                    print("You win!")
-                    break
+                    if evaluation is True:
+                        print("You win!")
+                        break
 
-                elif game.drawed:
-                    print("Game drawed!")
-                    break
+                    elif game.drawed:
+                        print("Game drawed!")
+                        break
 
-                points += evaluation
+                    points += evaluation
                     
-
+                else:
                 
-                grid = game.grid.flatten()
-                open_slots = game.open_slots
+                    grid = game.grid.flatten()
+                    open_slots = game.open_slots
 
-                prediction = model.eval(grid)
-                largest_value = np.max(prediction[open_slots])
-                choice = np.where(prediction == largest_value)[0][0]
+                    x_grid = np.zeros(9)
+                    o_grid = np.zeros(9)
+                    blank_grid = np.zeros(9)
 
-                print(prediction)
+                    blank_grid[np.where(grid == 0)] = 1
+                    x_grid[np.where(grid == 1)] = 1
+                    o_grid[np.where(grid == 2)] = 1
+                    
+                    real_grid = np.append(blank_grid, np.append(x_grid, np.append(o_grid, player)))
 
-                evaluation = game.select(choice, 1)
+                    prediction = model.eval(real_grid)
+                    largest_value = np.max(prediction[open_slots])
+                    choice = np.where(prediction == largest_value)[0][0]
 
-                print("+++ Bot's Turn")
+                    evaluation = game.select(choice, 1)
 
-                self.render(game.grid)
+                    print(prediction)
 
-                if evaluation is True:
-                    print("You lose!")
-                    break
+                    print("+++ Bot's Turn")
 
-                elif game.drawed:
-                    print("Game drawed!")
-                    break
+                    self.render(game.grid)
+
+                    if evaluation is True:
+                        print("You lose!")
+                        break
+
+                    elif game.drawed:
+                        print("Game drawed!")
+                        break
 
 
 
