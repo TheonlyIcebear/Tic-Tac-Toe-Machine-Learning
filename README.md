@@ -52,7 +52,7 @@ You can run `main.py` however you'd like, to change the paramaters go to the bot
 
 ### Visualization
 You can run `animate.py` to get a graph of the average accuracy for each generation
-![Img](images/example-graph0.png)
+![Img]([images/example-graph0.png)](https://cdn.discordapp.com/attachments/1085375983407870112/1105340373108277248/image.png)
 
 To begin training a new model just simply empty the contents of `data.py` and restart `main.py`
 
