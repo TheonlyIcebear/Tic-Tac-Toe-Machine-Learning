@@ -40,7 +40,7 @@ class Model:
         input_layer = predictions
 
         targets = np.array([0] * 9)
-        targets[target] = 1
+        targets[target] = 0.7
 
         layer_outputs = self._layer_outputs[::-1]
 
@@ -280,6 +280,9 @@ class Main:
                 for count in range(start + self.tests * thread_index, start + self.tests * (thread_index + 1)):
                     model = brain
                     grid = possible_games[count % len(possible_games)]
+
+                    if grid.count(1 - player) > grid.count(player):
+                        continue
                     
                     game = Game(grid)
                     open_slots = game.open_slots.tolist()
@@ -303,11 +306,8 @@ class Main:
                     gradient = model.gradient(best_moves, prediction)
                     gradient_map.append(gradient)
 
-                    select = game.select(choice, player)
 
-                    if choice in best_moves:
-                        points += model.average_cost
-
+                    points += model.average_cost
                     trials += 1
                         
 
@@ -329,10 +329,10 @@ class Main:
 
 if __name__ == "__main__":
     Main(
-        tests_amount = 150, # The length of the tests,
-        generation_limit = 500, # The amount of generations the model will be trained through
+        tests_amount = 200, # The length of the tests,
+        generation_limit = 50, # The amount of generations the model will be trained through
         momentum_conservation = 0.00, # What percent of the previous changes that are added to each weight in our gradient descent
-        learning_rate = 0.0025, # How fast the model learns, if too low the model will train very slow and if too high it won't train
+        learning_rate = 0.01, # How fast the model learns, if too low the model will train very slow and if too high it won't train
         dimensions = [2, 36],  # The length and height of the model
         threads = 6  # How many concurrent threads to be used
     )
