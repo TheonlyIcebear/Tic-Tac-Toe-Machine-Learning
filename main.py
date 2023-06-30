@@ -215,8 +215,6 @@ class Main:
 
             start += self.tests * self.threads
 
-            print(choice, start, best_moves, points, trials, points/trials)
-
             if not trials:
                 accuracy = 0
             else:
