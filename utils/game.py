@@ -33,10 +33,6 @@ class Game:
         diag = np.diag(grid)
         flip = np.diag(np.fliplr(grid))
 
-        print(diag, sorted(flip), search, sorted(flip) == search, tiles)
-
-        print(np.where(flip == 0)[0], np.where(diag == 0)[0])
-
         if sorted(diag) == search:
             diag1 =  ((np.where(diag == 0)[0] * 3) + np.where(diag == 0)[0]).tolist()
         else:
