@@ -9,54 +9,23 @@ class Game:
         ]) if grid is None else np.array(np.split(np.array(grid), 3))
 
     @property
+    def drawed(self):
+        return not self.open_slots.size
+
+    @property
     def open_slots(self):
         grid = self.grid.flatten()
         return np.where(grid == 0)[0]
+    
+    @staticmethod
+    def _calculate_open_slots(grid):
+        grid = grid.flatten()
+        return np.where(grid == 0)[0]
 
-    @property
-    def drawed(self):
-        grid = self.grid
-        threats = self._threats(grid, 0, 1) + self._threats(grid, 1, 1) + self._threats(grid, 0, 2) + self._threats(grid, 1, 2)
+    @staticmethod
+    def _threats(grid, player, tiles):
 
-        return not bool(threats)
-
-    @property
-    def valid_game(self):
-
-        if abs(len(np.where(self.grid == 1)[0]) - len(np.where(self.grid == 2)[0])) > 1:
-            return False
-
-        elif self._threats(self.grid, 0, 0) and self._threats(self.grid, 1, 0):
-            return False
-        
-        return True
-
-    def eval(self):
-        for player in [1, 2]:
-            if any([ 
-                (self.grid[row] == player).all() for row in range(3)
-            ]): # Horizontal crosses
-                return player
-
-            elif any([ 
-                (self.grid[:, column] == player).all() for column in range(3)
-            ]): # Vertical crosses
-                return player
-
-            elif (np.diag(self.grid) == player).all(): # Downwards diagonal crosses
-                return player
-
-            elif (np.diag(np.fliplr(self.grid)) == player).all() :# Upwards diagonal crosses
-                return player
-
-            elif not (self.grid == 0).any():
-                return True
-
-        return None
-
-    def _threats(self, grid, player, tiles):
-
-        search = ([0] * (3 - tiles)) + [player] * tiles
+        search = sorted(([0] * (3 - tiles)) + [player] * tiles)
         
         rows = [[x * 3 + tile for tile in np.where(grid[x, :] == 0)[0]] for x in range(3) if sorted(grid[x, :]) == search]
         cols = [[tile * 3 + y for tile in np.where(grid[:, y] == 0)[0]] for y in range(3) if sorted(grid[:, y]) == search]
@@ -64,19 +33,50 @@ class Game:
         diag = np.diag(grid)
         flip = np.diag(np.fliplr(grid))
 
+        print(diag, sorted(flip), search, sorted(flip) == search, tiles)
+
+        print(np.where(flip == 0)[0], np.where(diag == 0)[0])
+
         if sorted(diag) == search:
-            diag1 =  [tile * 3 + tile for tile in np.where(diag == 0)[0]]
+            diag1 =  ((np.where(diag == 0)[0] * 3) + np.where(diag == 0)[0]).tolist()
         else:
             diag1 = []
         
         if sorted(flip) == search:
-            diag2 = [(2 - tile) * 3 + tile for tile in np.where(flip == 0)[0]]
+            diag2 = ((np.where(flip == 0)[0] * 3) + (2 - np.where(flip == 0)[0])).tolist()
         else:
             diag2 = []
 
         threats = sum(rows, []) + sum(cols, []) + diag1 + diag2
 
         return threats
+
+    def eval(self, grid=None):
+
+        if grid is None:
+            grid = self.grid
+
+        for player in [1, 2]:
+            if any([ 
+                (grid[row] == player).all() for row in range(3)
+            ]): # Horizontal crosses
+                return player
+
+            elif any([ 
+                (grid[:, column] == player).all() for column in range(3)
+            ]): # Vertical crosses
+                return player
+
+            elif (np.diag(grid) == player).all(): # Downwards diagonal crosses
+                return player
+
+            elif (np.diag(np.fliplr(grid)) == player).all() :# Upwards diagonal crosses
+                return player
+
+        if not (grid == 0).any():
+            return True
+
+        return None
 
     def select(self, tile, player):
         index = int(tile)
@@ -100,7 +100,7 @@ class Game:
 
         return response == player
 
-    # Find the optimal moves, doesn't use mini-max
+    # Find the optimal moves, using mini-max
     def best_moves(self, player): 
         grid = self.grid
 
@@ -119,6 +119,8 @@ class Game:
 
         best = self.open_slots
 
+        print(real_forks, win_threats, opponent)
+
         if win_threats:
             best = win_threats
 
@@ -126,6 +128,8 @@ class Game:
             best = lose_threats
 
         elif len(real_forks) > 1: # To defend multiple fork possibilities you need create a threat that blocks a fork
+
+            stoppable = False
             found = False
 
             for tile in self.open_slots:
@@ -147,7 +151,7 @@ class Game:
                     best.append(tile)
                     found = True
 
-        elif opp_forks:
+        elif  opp_forks:
             best = opp_forks
 
         elif 4 in self.open_slots:
@@ -163,3 +167,32 @@ class Game:
                 best = [4]
 
         return np.unique(best)
+
+
+    def _minimax(self, _grid, move, player):
+        grid[move] = player
+
+        score = 0
+        open_slots = self._calculate_open_slots(grid)
+        print(open_slots)
+        for move in open_slots:
+
+            temp_grid = np.array(grid)
+            temp_grid[move] = player
+            evaluation = self.eval(temp_grid)
+
+            if evaluation == player:
+                scores += 1
+
+            elif evaluation == 1 - player:
+                scores -= 1
+
+            elif evaluation is None:
+                evaluation = self._minimax(temp_grid, move, player)
+
+        print(score)
+        return score
+
+
+            
+
