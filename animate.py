@@ -1,14 +1,15 @@
 import matplotlib.pyplot as plt, json
+import numpy as np
 
 plt.ion()
     
 while True:
     try:
-        best_overtime = json.load(open('generations.json', 'r+'))
+        best_overtime = np.array(json.load(open('generations.json', 'r+')))
     except:
         continue
     
-    plt.plot([i + 1 for i in range(len(best_overtime))], best_overtime, )
+    plt.plot(np.arange(len(best_overtime)) + 1, best_overtime)
     plt.draw()
     plt.pause(0.0001)
     plt.clf()
