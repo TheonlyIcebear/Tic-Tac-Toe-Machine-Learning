@@ -97,11 +97,6 @@ class Main:
                         expected_output
                     )
 
-                    print(real_grid)
-                    print(raw_prediction, choice)
-                    print(expected_output, best_moves)
-                    print(average_cost)
-
                     print("+++ Bot's Turn")
 
                     self.render(game.grid)
