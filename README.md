@@ -19,10 +19,6 @@ Think of the model as a "function", with that takes in an input and returns a ou
 - `w`: The weights associated with each node
 - `b`: The bias associated with each node <br><br>
     Every equation gives us a output and that output is called the nodes. But adding linear functions will only give you a linear function. So you have to use something called a activation function for each output. <br><br>
-For my network in particular I used the `Sigmoid Activation Function` It's definition is `y = 1 / (1+(e^-x))`<br>
-  ![Img](images/sigmoid-function0.png)
-
-
 
 So at first the model starts with random weights and biases then calculates the `Average Cost` of the function. Which is bassically how bad the function is at it's job. The higher the cost the worse the model. ![Img](images/cost-function0.ppm)
 
