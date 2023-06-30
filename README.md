@@ -8,6 +8,10 @@ A couple resources I used for making the project are listed below
  - https://www.youtube.com/watch?v=hfMk-kjRv4c
  - https://realpython.com/python-ai-neural-network/
 
+# Live Demo 
+
+You can play against the neural network here: https://ai-tic-tac-toe.repl.co/
+
 # How it works
 
 Think of the model as a "function", with that takes in an input and returns a output. <br>
