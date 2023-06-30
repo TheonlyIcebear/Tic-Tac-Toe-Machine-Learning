@@ -115,8 +115,6 @@ class Game:
 
         best = self.open_slots
 
-        print(real_forks, win_threats, opponent)
-
         if win_threats:
             best = win_threats
 
@@ -163,32 +161,3 @@ class Game:
                 best = [4]
 
         return np.unique(best)
-
-
-    def _minimax(self, _grid, move, player):
-        grid[move] = player
-
-        score = 0
-        open_slots = self._calculate_open_slots(grid)
-        print(open_slots)
-        for move in open_slots:
-
-            temp_grid = np.array(grid)
-            temp_grid[move] = player
-            evaluation = self.eval(temp_grid)
-
-            if evaluation == player:
-                scores += 1
-
-            elif evaluation == 1 - player:
-                scores -= 1
-
-            elif evaluation is None:
-                evaluation = self._minimax(temp_grid, move, player)
-
-        print(score)
-        return score
-
-
-            
-
