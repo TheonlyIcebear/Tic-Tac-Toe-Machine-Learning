@@ -25,7 +25,7 @@ Think of the model as a "function", with that takes in an input and returns a ou
 - `b`: The bias associated with each node <br><br>
     Every equation gives us a output and that output is called the nodes. But adding linear functions will only give you a linear function. So you have to use something called a activation function for each output. <br><br>
 
-So at first the model starts with random weights and biases then calculates the `Average Cost` of the function. Which is bassically how bad the function is at it's job. The higher the cost the worse the model. ![Img](images/cost-function0.ppm)
+So at first the model starts with random weights and biases then calculates the `Average Cost` of the function. Which is bassically how bad the function is at it's job. The higher the cost the worse the model. ![Img](images/cost-function0.png)
 
 Bassically the model wants to find the lowest point of the graph, or the lowest `Average cost`. And using some derivatives we can calculate the slope of the graph to find how much we need to change the values to get to that local minumum.
 
