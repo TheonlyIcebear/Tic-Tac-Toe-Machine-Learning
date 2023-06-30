@@ -10,7 +10,8 @@ A couple resources I used for making the project are listed below
 
 # Live Demo 
 
-You can play against the neural network here: https://ai-tic-tac-toe.repl.co/
+You can play against the neural network here: 
+ - https://ai-tic-tac-toe.repl.co/
 
 # How it works
 
