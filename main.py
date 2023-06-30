@@ -1,167 +1,38 @@
 from multiprocessing import Process, Queue
 import matplotlib.pyplot as plt
+from utils.model import Model
 from utils.game import Game
 from numba import jit, cuda
 from tqdm import tqdm
-import multiprocessing, threading, hashlib, random, numpy as np, copy, math, time, json
-            
-class Model:
-    def __init__(self, model):
-        self.model = model
-        self._layer_outputs = []
-        self._previous_changes = np.array([])
-        np.seterr(all="ignore")
-
-    # The activation function
-    def _sigmoid(self, x):
-        if x > 100:
-            return 1
-
-        return 1 / ( 1 + np.exp(-x) )
-
-    # Edit the model according to the gradients
-    def apply_changes(self, gradients, learning_rate):
-        model = np.array(self.model)
-        height = model.shape[1]
-
-        for gradient in gradients:
-            for count, mask in enumerate(gradient):
-                model -= (mask * learning_rate)
-
-        self.model = model
-
-    # Using back propagration to calculate the gradient descent
-    def gradient(self, target, predictions, momentum=0.5):
-
-        model = np.array(self.model)
-
-        length = self.model.shape[0]
-
-        input_layer = predictions
-
-        targets = np.array([0] * 9)
-        targets[target] = 0.7
-
-        layer_outputs = self._layer_outputs[::-1]
-
-        model_copy = np.array(model, dtype=float)
-        model_copy[:, :, :] = 0.
-
-        _previous_derivs = np.array([])
-
-        self.average_cost = ((predictions - targets) ** 2).mean()
-        
-        for count, (outputs, layer) in enumerate(zip(layer_outputs, model[::-1])):
-            
-            previous_derivs = np.array(_previous_derivs)
-            _previous_derivs = np.array([])
-
-            for idx, (output, weights) in enumerate(zip(outputs[::-1], layer[::-1])):
-
-                if count == length - 1:
-                    break
-
-                elif (not count) and (idx >= 9):
-                    continue
-
-                else:
-                    prev_activations = layer_outputs[count + 1]
-                    prediction = output
-
-                index = -(count + 1)
-                layer_height = len(outputs)
-                prev_layer_height = len(prev_activations)
-
-                weights = weights[:layer_height]
-                bias = weights[-1]
-                sigmoid_deriv = prediction * (1 - prediction)
-
-                if self._previous_changes.size:
-                    momentum_velocity = self._previous_changes[count, idx, :prev_layer_height + 1] * momentum
-                else:
-                    momentum_velocity = 0
-
-                if not count:
-
-                    target = targets[idx]
-
-                    cost_deriv = 2 * (prediction - target)
-                    node_value = cost_deriv * sigmoid_deriv
-
-                    total_deriv = prev_activations * node_value
-                    bias_deriv = node_value
-
-                    model_copy[index, idx, :layer_height + 1] = np.append(total_deriv, bias_deriv) + momentum_velocity
-
-                    _previous_derivs = np.append(_previous_derivs, node_value)
-
-                    continue
-                
-                node_value = sigmoid_deriv * np.dot(weights[:len(previous_derivs)], previous_derivs)
-
-                bias_deriv = node_value
-                total_deriv = prev_activations * node_value
-
-                model_copy[index, idx, :layer_height + 1] = np.append(total_deriv, bias_deriv) + momentum_velocity
-
-                _previous_derivs = np.append(_previous_derivs, node_value)
-
-        self._previous_changes = model_copy
-
-        return model_copy
-
-    # Run the model to get a output
-    def eval(self, input):
-        answer = 0
-        model = self.model
-
-        previous_layer_output = input
-
-        self._layer_outputs = np.array([])
-
-        for count, layer in enumerate(model):
-
-            layer_output = np.array([])
- 
-            for node in layer:
-                weights = node[:len(previous_layer_output)]
-                bias = node[-1]
-
-                output = self._sigmoid(np.dot(weights, previous_layer_output) + bias)
-
-                layer_output = np.append(layer_output, output)
-
-
-            if self._layer_outputs.size:
-                self._layer_outputs = np.vstack([self._layer_outputs, layer_output])
-            else:
-                self._layer_outputs = np.hstack([self._layer_outputs, layer_output])
-
-            previous_layer_output = np.array(layer_output)
-
-        return layer_output[:9]
+import multiprocessing, threading, hashlib, random, numpy as np, copy, math, time, json, os
 
 class Main:
-    def __init__(self, tests_amount, generation_limit, learning_rate, momentum_conservation, dimensions, threads):
+    def __init__(self, tests_amount, generation_limit, learning_rate, momentum_conservation, weight_decay, cost_limit, dimensions, threads):
         self.tests = tests_amount
         self.trials = generation_limit
         self.learning_rate = learning_rate
         self.momentum = momentum_conservation
-        self.length, self.height = dimensions
+        self.wd = weight_decay
+        self.length, self.height = dimensions[0]
+        self.shape = dimensions[1]
         self.threads = threads
+        self.cost_limit = cost_limit
         
         self.queue = Queue()
+        self.update_queue = Queue()
         self.children = 0
         self.generations = 0
         self.accuracy = 0
         self.model = []
+        self.length += 1
         self.inputs = 9 # There are nine inputs for the model as there are nine tiles on a tic tac toe grid
         
         
         try:
-            brain = np.array(json.load(open('model-training-data.py', 'r+')))
+            file = json.load(open('model-training-data.py', 'r+'))
+
+            brain = [np.array(data) for data in file[:2]] + file[2:]
         except Exception as e:
-            print(e)
             brain = self.build()
 
         threading.Thread(target=self.manager, args=(brain,)).start()
@@ -173,31 +44,29 @@ class Main:
 
     def update(self):
         tloop = tqdm(self.generator())
+        queue = self.update_queue
         
-        best_overtime = []
+        cost_overtime = []
         
         for _ in tloop:
 
-            tloop.set_description(f"Average Accuracy: {self.accuracy}, Generations: {self.generations}, Live: {self.children}")
+            tloop.set_description(f"Average Cost: {self.accuracy}, Generations: {self.generations}, Live: {self.children}")
 
-            generation = int(self.generations)
-            if not len(best_overtime) == generation:
-                best_overtime.append(0)
+            cost = queue.get()
+            cost_overtime.append(cost)
 
-            try:
-                if generation:
-                    best_overtime[generation - 1] = self.accuracy
-            except:
-                continue
-
-            json.dump(best_overtime, open('generations.json', 'w+'), indent=2)
+            json.dump(cost_overtime, open('generations.json', 'w+'), indent=2)
 
     # Manages threads
-    def manager(self, model=None):
+    def manager(self, network=None):
         threads = []
         average_accuracy = np.array([])
 
+        model = network[0]
+        momentum_gradient = np.zeros(model.shape)
+
         queue = self.queue
+        update_queue = self.update_queue
         
         for count in range(self.threads):
             receive_queue = Queue()
@@ -211,7 +80,7 @@ class Main:
 
         count = 0
         old_accuracy = -1
-        model = Model(model)
+        self.accuracy = None
 
         for _ in range(self.trials):
             
@@ -220,119 +89,172 @@ class Main:
             self.model = model
 
             self.children = self.threads
-            self.accuracy = 0
 
             backup = open('model-training-data.py', 'r+').read()
             queue = self.queue
 
-            if self.accuracy >= old_accuracy:
+            with open('model-training-data.py', 'w+') as file:
+                    try:
+                        file.write(json.dumps([model.tolist(), network[1].tolist()] + network[2:]))
+                    except Exception as e:
+                        print(e)
+                        file.write(backup)
 
-                old_accuracy = float(self.accuracy)
-
-                with open('model-training-data.py', 'w+') as file:
-
-                        try:
-                            file.write(json.dumps(model.model.tolist()))
-                        except Exception as e:
-                            print(e)
-                            file.write(backup)
-            
             for thread in threads:
-                thread[1].put(model)
+                thread[1].put(network)
 
-            gradients = []
+            gradient = np.zeros(model.shape)
 
             for _ in range(self.threads):
                 accuracy, gradient_map = queue.get()
-                gradients.append(gradient_map)
+                gradient += gradient_map
+
+                if not self.accuracy:
+                    self.accuracy = accuracy
                 
                 self.accuracy = (self.accuracy + accuracy) / 2
                 self.children -= 1
 
-            model.apply_changes(gradients, self.learning_rate)
-            # model = Model(model.model.tolist())
+            update_queue.put(self.accuracy)
+
+            if self.accuracy < self.cost_limit:
+                print(f"Cost Minimum Reached: {self.cost_limit}")
+                os.system("PAUSE")
+
+            model -= (gradient + (momentum_gradient * self.momentum)) * self.learning_rate / self.tests
+            momentum_gradient = np.array(gradient)
+            self.accuracy = None
 
     def worker(self, receieve_queue=None, thread_index=0):
         generations = 0
         start = 0
 
-        possible_games = []
-
-        for count in range(3 ** 9):
-            grid = [(count // (3 ** i)) % 3 for i in range(9)]
-
-            game = Game(grid)
-            if abs(grid.count(1) - grid.count(2)) > 1 or game.eval():
-                continue
-
-            possible_games.append(grid)
 
         while True:
             generations += 1
-            brain = receieve_queue.get()
+            model, heights, hidden_activation_function, output_activation_function, cost_function = receieve_queue.get()
+            model = Model(
+                model=model,
+                heights=heights,
+                hidden_function=hidden_activation_function, 
+                output_function=output_activation_function, 
+                cost_function=cost_function
+            )
 
-            gradient_map = []
-            trials = 0
+            gradient = np.zeros(model.model.shape)
+            trials = self.tests
             points = 0
+            games = 0
 
-            for player in range(2):
+            load_amount = self.tests // self.threads
 
-                for count in range(start + self.tests * thread_index, start + self.tests * (thread_index + 1)):
-                    model = brain
-                    grid = possible_games[count % len(possible_games)]
+            for count in range(start + load_amount * thread_index, start + load_amount * (thread_index + 1)):
+                
+                count = count % (3 ** 9)
 
-                    if grid.count(1 - player) > grid.count(player):
+                game = Game()
+                player = 0
+
+                for _ in range(9):
+
+                    inputs = game.grid.flatten()
+                    oppenent = 1 - player
+
+                    x_count = np.count_nonzero(inputs == 1)
+                    y_count = np.count_nonzero(inputs == 2)
+
+                    counts = [
+                        x_count,
+                        y_count
+                    ]
+
+                    if game.eval():
                         continue
-                    
-                    game = Game(grid)
+
+                    best_moves = game.best_moves(player)[:1]
+
+                    input_grid = np.zeros(18)
+                    input_grid[:9][inputs == (player + 1)] = 1
+                    input_grid[9:][inputs == (oppenent + 1)] = 1
+
+                    expected_output = np.zeros(9)
+                    expected_output[best_moves] = 1
+
+                    model_outputs = model.eval(input_grid)
+
+                    raw_prediction = np.array(model_outputs[-1])
                     open_slots = game.open_slots.tolist()
 
-                    x_grid = np.zeros(9)
-                    o_grid = np.zeros(9)
-                    blank_grid = np.zeros(9)
+                    _gradient, average_cost = model.gradient(
+                        model_outputs, 
+                        expected_output
+                    )
 
-                    blank_grid[np.where(grid == 0)] = 1
-                    x_grid[np.where(grid == 1)] = 1
-                    o_grid[np.where(grid == 2)] = 1
-                    
-                    real_grid = np.append(blank_grid, np.append(x_grid, np.append(o_grid, player)))
-                        
-                    prediction = model.eval(real_grid)
-                    largest_value = np.max(prediction[open_slots])
-                    choice = np.where(prediction == largest_value)[0][0]
+                    mask = np.ones(raw_prediction.shape, bool)
+                    mask[open_slots] = False
 
-                    best_moves = game.best_moves(player)
+                    prediction = np.array(raw_prediction)
+                    prediction[mask] = -1
 
-                    gradient = model.gradient(best_moves, prediction)
-                    gradient_map.append(gradient)
+                    choice = np.argmax(prediction)
 
+                    gradient += _gradient
+                    points += 1 * average_cost
+                    games += 1
 
-                    points += model.average_cost
-                    trials += 1
-                        
+                    random_int = np.random.rand()
+
+                    if random_int < 0.25:
+                        choice = random.choice(game.open_slots)
+
+                    elif random_int < 0.75:
+                        choice = random.choice(best_moves)
+
+                    game.select(choice, player)
+                    player = oppenent
+
+            start += self.tests * self.threads
+
+            print(choice, start, best_moves, points, trials, points/trials)
 
             if not trials:
                 accuracy = 0
             else:
-                accuracy = points / trials
-            self.queue.put([accuracy, gradient_map])
+                accuracy = points / games
 
-            start += self.tests * self.threads
+            self.queue.put([accuracy, gradient])
                     
 
     def build(self):
-        default = (3 * 9) + 2
+        inputs = 2
+        shape = self.shape
 
-        model = np.random.randn(self.length, self.height, self.height + 1 if self.height > default else default )
+        heights = np.full(self.length, self.height)
+        max_height = max([inputs + 1, self.height + 1, max(shape.values()) if shape else -1])
 
-        return model
+        model = np.random.uniform(-2.5, 2.5, (self.length, max_height, max_height))
+
+        if shape:
+            heights[np.array([*shape.keys()])] = [*shape.values()]
+            
+        heights = np.append([18], heights)
+        heights[-1] = 9
+
+        return [model, heights, "tanh", "softmax", "cross_entropy"]
 
 if __name__ == "__main__":
     Main(
-        tests_amount = 200, # The length of the tests,
-        generation_limit = 50, # The amount of generations the model will be trained through
-        momentum_conservation = 0.00, # What percent of the previous changes that are added to each weight in our gradient descent
-        learning_rate = 0.01, # How fast the model learns, if too low the model will train very slow and if too high it won't train
-        dimensions = [2, 36],  # The length and height of the model
-        threads = 6  # How many concurrent threads to be used
+        tests_amount = 220, # The length of the tests,
+        generation_limit = 1000000, # The amount of generations the model will be trained through
+        learning_rate = 0.02, # How fast the model learns, if too low the model will train very slow and if too high it won't train
+        momentum_conservation = 0.001, # What percent of the previous changes that are added to each weight in our gradient descent
+        weight_decay = 0.0,
+        cost_limit = 0.0,
+        dimensions = [
+            [5, 36], 
+            {
+                
+            }
+        ],  # The length and height of the model
+        threads = 10  # How many concurrent threads to be used
     )
