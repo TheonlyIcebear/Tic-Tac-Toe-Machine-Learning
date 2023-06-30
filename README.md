@@ -5,7 +5,7 @@ A side project where I trained an ai to learn to play Tic Tac Toe.
 A couple resources I used for making the project are listed below
 
  - https://www.youtube.com/watch?v=aircAruvnKk&list=PL_h2yd2CGtBHEKwEH5iqTZH85wLS-eUzv
- - https://www.youtube.com/watch?v=hfMk-kjRv4c&t=2414s
+ - https://www.youtube.com/watch?v=hfMk-kjRv4c
  - https://realpython.com/python-ai-neural-network/
 
 # How it works
