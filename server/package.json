@@ -1,17 +1,10 @@
 {
-  "name": "coinbase-wallet-sdk-react-template",
+  "name": "react-template",
   "version": "1.0.0",
   "description": "",
   "keywords": [],
   "main": "src/index.js",
   "dependencies": {
-    "@chakra-ui/icons": "^2.0.2",
-    "@chakra-ui/react": "^2.2.1",
-    "@coinbase/wallet-sdk": "^3.2.0",
-    "@testing-library/jest-dom": "^5.16.4",
-    "@testing-library/react": "^13.3.0",
-    "@testing-library/user-event": "^13.5.0",
-    "@walletconnect/web3-provider": "1.7.8",
     "assert": "^2.0.0",
     "axios": "^1.4.0",
     "buffer": "^6.0.3",
